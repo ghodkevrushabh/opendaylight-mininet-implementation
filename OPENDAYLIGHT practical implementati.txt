@@ -1,0 +1,248 @@
+OPENDAYLIGHT practical implementation
+
+
+#1st thing 1st --> open 2 terminals --> one for opendaylight and one for mininet  --> You can rename the tabs of terminal in Lubuntu
+
+> sudo apt update                                #parampara, pratishtha, anushasan
+
+
+
+
+# 1. Downloaded the OpenDaylight Oxygen release directly
+
+> wget       https://nexus.opendaylight.org/content/repositories/opendaylight.release/org/opendaylight/integration/karaf/0.8.4/karaf-0.8.4.zip
+
+#paste above link using putty or i'm gonna upload it on my GitHub. 
+
+
+
+
+#after running first cmd, it downloaded zip file of opendaylight and printed 'karaf-0.8.4.zip' so while unzipping it we need to use exact same name. 
+
+#come in ODL terminal:
+# 2. Unzip the correctly downloaded file (ignoring the corrupted one)
+> unzip "karaf-0.8.4.zip"                                # "  " is imp here 
+
+
+#3. Moved into new directory
+> cd ~/karaf-0.8.4                                       #jithe karaf-0.8.4 unzip kela
+
+
+_________________________________________________________________
+#if there are some broken ghost files                            |
+> sudo rm -rf /usr/lib/jvm/* 					 |					
+# Purging the package manager's memory of the corrupted Java     |
+> sudo apt-get purge "*openjdk*" -y                               |  <---use this cmds if u feel fucked up 
+> sudo apt-get autoremove -y					 |       and again freshly install java, by running 4th cmd.
+_________________________________________________________________| 
+
+
+#4. Installed a completely fresh, working copy of the Java 8 JDK
+> sudo apt-get install openjdk-8-jdk -y
+
+
+* Permanent Java Path:
+--> Open your .bashrc file and add the Java path to the bottom so you don't have to export it every time.
+> nano ~/.bashrc
+
+# Add this line at the end of that .bashrc file
+> export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+
+# Save (Ctrl+O, Enter) and Exit (Ctrl+X). Then run:
+> source ~/.bashrc                     
+
+
+
+* Install & Load Networking Drivers:
+--> Ensure Open vSwitch (the engine) is installed and the kernel driver is loaded.
+
+
+
+> sudo apt install openvswitch-switch mininet -y
+
+> sudo modprobe openvswitch
+
+# Verify the kernel driver is loaded:
+> lsmod | grep openvswitch
+
+#The lsmod command lists all kernel modules currently loaded. We use grep to filter for Open vSwitch.
+
+#If it works: You will see a line starting with openvswitch followed by some numbers (memory size) and a list of dependent modules (like nf_nat, nf_conntrack).
+
+
+# 6. Launched the OpenDaylight controller
+
+> ./bin/karaf                                 #run this cmd in karaf-0.8.4 <- this directory only
+
+
+
+# 7. Installed the necessary backend features inside the Karaf shell
+
+> feature:install odl-restconf odl-l2switch-switch odl-mdsal-apidocs
+
+#Everything is now running perfectly in the background. it will take 2-3 mins. so wait!!!
+
+
+
+
+#8. keep opendaylight's terminal open and go to "Mininet's" Terminal.  
+
+#9. Now we'll install Mininet, and then start the mininet
+
+> sudo apt install mininet -y
+
+#Cleanup First:
+--> Always clear previous failed attempts.
+
+> sudo mn -c
+
+
+# Launch Mininet:
+
+
+#10. Since you are running both OpenDaylight and Mininet on the exact same Ubuntu virtual machine (iacsd-virtualbox), you don't even need to hunt down your IP address. Create a linear topology of 3 switches and connect them to the controller on port 6633. You can just tell Mininet to connect to 127.0.0.1 (localhost).
+
+
+>sudo mn --topo linear,3 --mac --controller remote,ip=127.0.0.1,port=6633 --switch ovs,protocols=OpenFlow13
+
+#write above cmd exactly like this. otherwise terminal will get confused and throw errors.    
+
+
+# 11. Once you see the mininet> prompt, perform these checks in order:
+
+* Check Hardware Connection:
+* Ensure the switches are built and connected to the brain(ODL).
+
+mininet> sh ovs-vsctl show
+
+--> Check for: Bridge s1, Bridge s2, Bridge s3 and is_connected: true.
+
+
+* Test Connectivity:
+* Tell the hosts to communicate.
+
+
+mininet> pingall
+--> Result should be 0% dropped.
+
+
+
+-----------------------------------------------------------------------------------------------------------------------
+
+# The "Brain" (OpenDaylight) is successfully controlling the "Body" (Mininet switches).
+
+* you need to provide the "Proof of SDN" for your practical submission. Here are the three things you should do right now to finish the lab.
+
+
+1. View the Flow Tables (The Southbound Proof)
+
+- The pings worked because OpenDaylight pushed "Flow Rules" to the switches. 
+- You should see these rules to prove the controller is doing its job.
+  In the Mininet terminal, run:
+
+
+mininet> dpctl dump-flows
+
+
+* What to look for: You’ll see a bunch of text showing priority, n_packets, and actions=output. 
+* This is the literal "instruction manual" the controller sent to the switches.
+
+## ``dptcl dump-flows``  cmd can throw error cuz of OpenFlow version mismatch. 
+to solve that error do below thing.
+
+
+
+1. View the Flows (Correct Command)
+Run this inside your Mininet prompt:
+
+
+		mininet> sh ovs-ofctl -O OpenFlow13 dump-flows s1
+
+
+
+(This targets switch s1. You can change it to s2 or s3 to see their specific rules).
+
+2. What you are looking at (The Logic)
+
+--> When you run that above cmd , you'll see lines with cookie, duration, and actions.
+
+--> The Controller in Action: Since you used odl-l2switch-switch, OpenDaylight saw the first ping, learned which MAC address is on which port, and pushed an "Output" action to the switch.
+
+--> Southbound Interface: This is the perfect example of the Southbound API working. The controller uses OpenFlow 1.3 to program the "dumb" switches.
+-----------------------------------------------------------------------
+
+2. Check the Topology via REST (northbound proof)
+
+- One of the core features of OpenDaylight is the Northbound API. 
+- You can ask the controller for the network map using a web request.
+- Open a third terminal window and run this curl command:
+
+> curl -u admin:admin http://localhost:8181/restconf/operational/network-topology:network-topology
+
+--> What to look for: A massive wall of JSON text. 
+This proves that an external application can "read" the network state from the controller.
+
+--> If you get a JSON response showing node-id, s1, s2, and s3, you have completed the full SDN loop:
+
+1. Data Plane: Mininet created the hosts.
+
+2. Southbound: OpenFlow connected switches to the controller.
+
+3. Control Plane: OpenDaylight learned the path and enabled pings.
+
+4. Northbound: RESTCONF shared the status with the outside world.
+
+--------------------------------------------------------------------------
+
+
+3. Test Network Agility (The "Dynamic" Proof)
+
+- SDN is meant to be flexible. Let's break the network and see OpenDaylight react.
+# Bring a link down: 
+
+		mininet> link s1 s2 down
+
+
+# Try to ping: 
+
+		mininet> pingall                    (You’ll see some hosts can no longer talk).
+
+
+
+# Bring it back up: 
+
+		mininet> link s1 s2 up
+
+
+# Ping again: 
+
+		mininet> pingall   (Everything should work again. This proves the controller dynamically manages the state).
+
+--------------------------------------------------------------------------------------------------
+
+# Step 1: Exit Mininet
+
+mininet> exit
+
+
+# Step 2: Clean the Virtual Hardware
+In the regular terminal, run:
+
+sudo mn -c
+
+
+# Step 3: Stop OpenDaylight
+Go to the terminal where Karaf is running and type:
+
+
+opendaylight-user@root> logout
+
+
+---------------------------------------------------------------------------------------------------------------
+Network Agility: By bringing links up and down, you proved that the SDN controller automatically detects changes in topology and updates the flow tables in real-time.
+
+Separation of Concerns: The switches (OVS) handled the traffic, but the controller (OpenDaylight) decided where that traffic should go.
+
+Scalability: In a real-world DITISS scenario, you could manage thousands of switches from that one single Karaf terminal.
+
+
